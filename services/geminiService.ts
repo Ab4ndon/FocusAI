@@ -161,16 +161,119 @@ export async function generateSessionSummary(
 }
 
 // --- Text-to-Speech ---
-// Qwen TTS 接口与现有前端集成差异较大，这里优先使用浏览器 TTS 作为兜底。
-export async function generateSpeech(text: string): Promise<void> {
-  if (typeof window === "undefined") return;
-  if (window.speechSynthesis) {
-    return new Promise((resolve) => {
+// 支持不同语音风格的 TTS，通过调整语音参数和选择不同音色实现
+export type VoiceStyle = 'gentle' | 'strict' | 'energetic' | 'calm' | 'motivational';
+
+interface VoiceConfig {
+  rate: number;    // 语速 0.1-10
+  pitch: number;   // 音调 0-2
+  volume: number;  // 音量 0-1
+  voiceName?: string; // 优先选择的语音名称（部分匹配）
+}
+
+const VOICE_CONFIGS: Record<VoiceStyle, VoiceConfig> = {
+  gentle: { rate: 0.9, pitch: 1.3, volume: 0.85, voiceName: '温柔' },      // 温柔学姐：女声，较高音调，较慢，柔和
+  strict: { rate: 1.05, pitch: 0.8, volume: 0.95, voiceName: '标准' },     // 严厉老师：男声，较低音调，正常速度，清晰
+  energetic: { rate: 1.2, pitch: 0.9, volume: 1.0, voiceName: '活力' },   // 活力教练：男声，中等音调，较快，大声
+  calm: { rate: 0.8, pitch: 1.2, volume: 0.75, voiceName: '平静' },        // 平静导师：女声，较高音调，很慢，很柔和
+  motivational: { rate: 1.1, pitch: 0.85, volume: 0.98, voiceName: '激励' }, // 励志演讲：男声，较低音调，稍快，较大声
+};
+
+// 获取可用的中文语音列表
+function getChineseVoices(): SpeechSynthesisVoice[] {
+  if (typeof window === 'undefined' || !window.speechSynthesis) return [];
+  return window.speechSynthesis.getVoices().filter(voice => 
+    voice.lang.startsWith('zh') || voice.lang.includes('Chinese')
+  );
+}
+
+// 根据语音风格选择最合适的语音（明确区分男声/女声）
+function selectVoice(style: VoiceStyle, voices: SpeechSynthesisVoice[]): SpeechSynthesisVoice | null {
+  if (voices.length === 0) return null;
+  
+  // 根据风格明确选择男声或女声
+  const needFemale = style === 'gentle' || style === 'calm';  // 温柔学姐、平静导师用女声
+  const needMale = style === 'strict' || style === 'energetic' || style === 'motivational'; // 其他用男声
+  
+  // 尝试匹配女声的关键词
+  const femaleKeywords = ['Female', '女', 'female', 'Xiaoxiao', 'Xiaoyi', 'Xiaoyan', 'Xiaoxuan', 'Xiaomo', 'Xiaoxian', 'Xiaomei'];
+  // 尝试匹配男声的关键词
+  const maleKeywords = ['Male', '男', 'male', 'Yunxi', 'Yunyang', 'Yunye', 'Yunjian', 'Yunxia', 'Yunhao'];
+  
+  if (needFemale) {
+    // 优先找女声
+    for (const keyword of femaleKeywords) {
+      const found = voices.find(v => 
+        v.name.includes(keyword) || 
+        v.name.toLowerCase().includes(keyword.toLowerCase())
+      );
+      if (found) return found;
+    }
+    // 如果找不到明确的女声，尝试通过索引选择（通常系统语音列表中女声在前）
+    if (voices.length >= 2) {
+      return voices[0]; // 通常第一个是女声
+    }
+  } else if (needMale) {
+    // 优先找男声
+    for (const keyword of maleKeywords) {
+      const found = voices.find(v => 
+        v.name.includes(keyword) || 
+        v.name.toLowerCase().includes(keyword.toLowerCase())
+      );
+      if (found) return found;
+    }
+    // 如果找不到明确的男声，尝试通过索引选择（通常男声在后）
+    if (voices.length >= 2) {
+      return voices[voices.length - 1]; // 通常最后一个是男声
+    }
+  }
+  
+  // 默认返回第一个中文语音
+  return voices[0];
+}
+
+export async function generateSpeech(text: string, style: VoiceStyle = 'gentle'): Promise<void> {
+  if (typeof window === "undefined" || !window.speechSynthesis) return;
+  
+  return new Promise((resolve) => {
+    // 获取中文语音列表
+    let voices = getChineseVoices();
+    
+    // 如果语音列表为空，等待语音加载完成
+    if (voices.length === 0) {
+      const checkVoices = () => {
+        voices = getChineseVoices();
+        if (voices.length > 0) {
+          setupAndSpeak();
+        } else {
+          setTimeout(checkVoices, 100);
+        }
+      };
+      window.speechSynthesis.onvoiceschanged = checkVoices;
+      checkVoices();
+      return;
+    }
+    
+    setupAndSpeak();
+    
+    function setupAndSpeak() {
+      const config = VOICE_CONFIGS[style];
+      const selectedVoice = selectVoice(style, voices);
+      
       const u = new SpeechSynthesisUtterance(text);
       u.lang = "zh-CN";
+      u.rate = config.rate;
+      u.pitch = config.pitch;
+      u.volume = config.volume;
+      
+      if (selectedVoice) {
+        u.voice = selectedVoice;
+      }
+      
       u.onend = resolve;
       u.onerror = resolve;
+      
       window.speechSynthesis.speak(u);
-    });
-  }
+    }
+  });
 }

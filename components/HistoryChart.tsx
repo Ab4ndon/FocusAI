@@ -15,12 +15,22 @@ export const HistoryChart: React.FC<HistoryChartProps> = ({ data }) => {
     );
   }
 
-  // Format data for chart
-  const chartData = data.map((item, index) => ({
-    time: new Date(item.timestamp).toLocaleTimeString('zh-CN', { hour12: false, minute: '2-digit', second: '2-digit' }),
-    score: item.concentrationScore,
-    index
-  }));
+  // Format data for chart with time on X-axis
+  const chartData = data.map((item) => {
+    const date = new Date(item.timestamp);
+    // 格式化时间：HH:MM:SS
+    const timeStr = date.toLocaleTimeString('zh-CN', { 
+      hour12: false, 
+      hour: '2-digit', 
+      minute: '2-digit', 
+      second: '2-digit' 
+    });
+    return {
+      time: timeStr,
+      score: item.concentrationScore,
+      timestamp: item.timestamp
+    };
+  });
 
   return (
     <div className="w-full h-64">
@@ -38,7 +48,10 @@ export const HistoryChart: React.FC<HistoryChartProps> = ({ data }) => {
             tick={{fontSize: 10, fill: '#64748b'}} 
             tickLine={false}
             axisLine={false}
-            interval="preserveStartEnd"
+            interval={chartData.length > 10 ? Math.floor(chartData.length / 6) : 0}
+            angle={chartData.length > 6 ? -45 : 0}
+            textAnchor={chartData.length > 6 ? "end" : "middle"}
+            height={chartData.length > 6 ? 60 : 30}
           />
           <YAxis 
             domain={[0, 100]} 

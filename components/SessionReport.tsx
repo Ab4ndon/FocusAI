@@ -6,6 +6,7 @@ import { XMarkIcon } from '@heroicons/react/24/outline';
 
 interface SessionReportProps {
   summary: SessionSummary;
+  earnedCoins: number;
   onClose: () => void;
 }
 
@@ -17,7 +18,7 @@ const COLORS = {
   [PostureType.UNKNOWN]: '#94a3b8',
 };
 
-export const SessionReport: React.FC<SessionReportProps> = ({ summary, onClose }) => {
+export const SessionReport: React.FC<SessionReportProps> = ({ summary, earnedCoins, onClose }) => {
   const chartData = Object.entries(summary.postureStats)
     .filter(([_, value]) => value > 0)
     .map(([key, value]) => ({
@@ -46,6 +47,25 @@ export const SessionReport: React.FC<SessionReportProps> = ({ summary, onClose }
 
         <div className="p-8 space-y-8">
           
+          {/* Coins Highlight */}
+          <div className="rounded-3xl bg-gradient-to-r from-amber-400 via-amber-300 to-yellow-300 text-amber-900 px-6 py-4 flex items-center justify-between shadow-md">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-2xl bg-white/20 flex items-center justify-center shadow-inner">
+                <span className="text-2xl">🪙</span>
+              </div>
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-widest opacity-80">本次获得金币</p>
+                <p className="text-2xl sm:text-3xl font-extrabold tracking-tight">
+                  {earnedCoins}
+                  <span className="text-xs sm:text-sm font-semibold ml-2">Coins</span>
+                </p>
+              </div>
+            </div>
+            <div className="hidden sm:block text-xs text-amber-950/80 max-w-xs">
+              高专注、高质量的学习能获得更多金币，继续保持优秀的学习状态～
+            </div>
+          </div>
+
           {/* Key Metrics Grid */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
             <div className={`p-6 rounded-2xl ${summary.averageScore >= 80 ? 'bg-green-50 text-green-700' : summary.averageScore >= 60 ? 'bg-yellow-50 text-yellow-700' : 'bg-red-50 text-red-700'}`}>
