@@ -1,0 +1,7 @@
+{
+  "name": "智能网课专注度助手",
+  "description": "基于 Gemini 视觉模型的实时网课状态监测应用，帮助学生保持专注、纠正坐姿。",
+  "requestFramePermissions": [
+    "camera"
+  ]
+}
