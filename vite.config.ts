@@ -11,8 +11,12 @@ export default defineConfig(({ mode }) => {
       },
       plugins: [react()],
       define: {
-        'process.env.API_KEY': JSON.stringify(env.GEMINI_API_KEY),
-        'process.env.GEMINI_API_KEY': JSON.stringify(env.GEMINI_API_KEY)
+        'process.env.API_KEY': JSON.stringify(env.GEMINI_API_KEY), // 兼容旧变量
+        'process.env.GEMINI_API_KEY': JSON.stringify(env.GEMINI_API_KEY),
+        'process.env.DASHSCOPE_API_KEY': JSON.stringify(env.DASHSCOPE_API_KEY),
+        'process.env.DASHSCOPE_BASE_URL': JSON.stringify(env.DASHSCOPE_BASE_URL),
+        'process.env.QWEN_VL_MODEL': JSON.stringify(env.QWEN_VL_MODEL),
+        'process.env.QWEN_TEXT_MODEL': JSON.stringify(env.QWEN_TEXT_MODEL),
       },
       resolve: {
         alias: {

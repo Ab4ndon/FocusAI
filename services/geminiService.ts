@@ -1,96 +1,105 @@
-import { GoogleGenAI, Type, Modality } from "@google/genai";
+import OpenAI from "openai";
 import { AnalysisResult, PostureType, SessionSummary } from "../types";
 import { POSTURE_LABELS } from "../constants";
 
-// Lazy initialization holder
-let aiClient: GoogleGenAI | null = null;
+// 懒加载 DashScope（OpenAI 兼容）客户端
+let aiClient: OpenAI | null = null;
 
-function getAiClient(): GoogleGenAI {
+function getAiClient(): OpenAI {
   if (!aiClient) {
-    // Access process.env.API_KEY directly as required
-    const apiKey = process.env.API_KEY;
+    const apiKey =
+      process.env.DASHSCOPE_API_KEY ||
+      process.env.API_KEY || // 兼容旧变量
+      "";
     if (!apiKey) {
-      throw new Error("未检测到 API Key。请在 Netlify 环境变量设置中配置 API_KEY。");
+      throw new Error("未检测到 API Key。请在环境变量中配置 DASHSCOPE_API_KEY。");
     }
-    aiClient = new GoogleGenAI({ apiKey });
+
+    aiClient = new OpenAI({
+      apiKey,
+      baseURL:
+        process.env.DASHSCOPE_BASE_URL ||
+        "https://dashscope.aliyuncs.com/compatible-mode/v1",
+      // 浏览器环境下需要显式允许，否则 openai SDK 会拒绝执行
+      dangerouslyAllowBrowser: true,
+    });
   }
   return aiClient;
 }
 
-// Using gemini-2.0-flash-exp as it is currently the most stable multimodal model available
-const VISION_MODEL = 'gemini-2.0-flash-exp';
-// Keep TTS on the specialized model
-const TTS_MODEL = 'gemini-2.5-flash-preview-tts';
+// 默认模型名称，可在环境变量中覆盖
+const VISION_MODEL = process.env.QWEN_VL_MODEL || "qwen3-vl-plus";
+const TEXT_MODEL = process.env.QWEN_TEXT_MODEL || "qwen-plus"; // 用于总结
 
-const RESPONSE_SCHEMA = {
-  type: Type.OBJECT,
-  properties: {
-    concentrationScore: {
-      type: Type.INTEGER,
-      description: "A score from 0 to 100 indicating how focused the student appears.",
-    },
-    isLookingAtScreen: {
-      type: Type.BOOLEAN,
-      description: "True if the student's eyes are directed at the screen.",
-    },
-    posture: {
-      type: Type.STRING,
-      enum: ["GOOD", "SLOUCHING", "TOO_CLOSE", "TOO_FAR", "UNKNOWN"],
-      description: "Assessment of the student's sitting posture.",
-    },
-    hasElectronicDevice: {
-      type: Type.BOOLEAN,
-      description: "True if a phone, tablet, or gaming device (other than the main computer) is visible and being used.",
-    },
-    detectedDistractions: {
-      type: Type.ARRAY,
-      items: { type: Type.STRING },
-      description: "List of distracting elements or behaviors detected (e.g. 'Playing with phone', 'Eating', 'Talking to others'). Return empty array if none.",
-    },
-    feedback: {
-      type: Type.STRING,
-      description: "A short, encouraging, and corrective feedback message in Chinese for the student (max 30 words).",
-    },
-  },
-  required: ["concentrationScore", "isLookingAtScreen", "posture", "hasElectronicDevice", "detectedDistractions", "feedback"],
-};
+function extractText(content: any): string {
+  if (!content) return "";
+  if (typeof content === "string") return content;
+  if (Array.isArray(content)) {
+    return content
+      .map((p) => (typeof p?.text === "string" ? p.text : ""))
+      .filter(Boolean)
+      .join("\n");
+  }
+  return "";
+}
 
-// --- Vision Analysis ---
+function parseJsonSafely(text: string) {
+  const start = text.indexOf("{");
+  const end = text.lastIndexOf("}");
+  if (start === -1 || end === -1 || end <= start) {
+    throw new Error("模型未返回有效 JSON");
+  }
+  return JSON.parse(text.slice(start, end + 1));
+}
 
-export async function analyzeStudentState(base64Image: string): Promise<Omit<AnalysisResult, 'timestamp'>> {
+// --- Vision Analysis with Qwen ---
+export async function analyzeStudentState(
+  base64Image: string
+): Promise<Omit<AnalysisResult, "timestamp">> {
   const ai = getAiClient();
-  
-  // REMOVED try/catch here so App.tsx can handle 429/Quota errors
-  const response = await ai.models.generateContent({
+  const imageDataUrl = `data:image/jpeg;base64,${base64Image}`;
+
+  const resp = await ai.chat.completions.create({
     model: VISION_MODEL,
-    contents: {
-      parts: [
-        {
-          inlineData: {
-            mimeType: 'image/jpeg',
-            data: base64Image,
+    temperature: 0.2,
+    messages: [
+      {
+        role: "system",
+        content:
+          "你是网课专注度监测助手，请严格按照指令输出 JSON。",
+      },
+      {
+        role: "user",
+        content: [
+          {
+            type: "image_url",
+            image_url: { url: imageDataUrl },
           },
-        },
-        {
-          text: `请分析这张网课学生的摄像头截图。判断学生的专注度、视线方向、坐姿以及是否有违规电子设备。
-          如果学生不在画面中，请将专注度设为0，姿态设为UNKNOWN。
-          请严格按照 JSON 格式返回。`,
-        },
-      ],
-    },
-    config: {
-      responseMimeType: "application/json",
-      responseSchema: RESPONSE_SCHEMA,
-    },
+          {
+            type: "text",
+            text: `请分析这张网课学生的摄像头截图，返回如下 JSON：
+{
+  "concentrationScore": 0-100,
+  "isLookingAtScreen": true/false,
+  "posture": "GOOD"|"SLOUCHING"|"TOO_CLOSE"|"TOO_FAR"|"UNKNOWN",
+  "hasElectronicDevice": true/false,
+  "detectedDistractions": ["..."],
+  "feedback": "中文鼓励与提醒，30字以内"
+}
+若学生不在画面中，专注度设为0，posture=UNKNOWN，干扰项可为空数组。仅输出 JSON，不要额外说明。`,
+          },
+        ],
+      },
+    ],
   });
 
-  const text = response.text;
+  const content = resp.choices?.[0]?.message?.content;
+  const text = extractText(content);
   if (!text) {
-    throw new Error("No response from Gemini.");
+    throw new Error("模型未返回内容");
   }
+  const data = parseJsonSafely(text);
 
-  const data = JSON.parse(text);
-  
   return {
     concentrationScore: data.concentrationScore,
     isLookingAtScreen: data.isLookingAtScreen,
@@ -101,7 +110,10 @@ export async function analyzeStudentState(base64Image: string): Promise<Omit<Ana
   };
 }
 
-export async function generateSessionSummary(history: AnalysisResult[]): Promise<string> {
+// --- Session Summary with Qwen ---
+export async function generateSessionSummary(
+  history: AnalysisResult[]
+): Promise<string> {
   if (history.length === 0) return "本次学习时间太短，无法生成报告。";
 
   const totalScore = history.reduce((sum, item) => sum + item.concentrationScore, 0);
@@ -110,108 +122,55 @@ export async function generateSessionSummary(history: AnalysisResult[]): Promise
     acc[item.posture] = (acc[item.posture] || 0) + 1;
     return acc;
   }, {} as Record<string, number>);
-  
+
   const mostFrequentPosture = Object.entries(postureCounts).sort((a, b) => b[1] - a[1])[0][0];
   const distractions = history
-    .flatMap(h => h.detectedDistractions)
+    .flatMap((h) => h.detectedDistractions)
     .filter((v, i, a) => a.indexOf(v) === i)
     .join(", ");
 
   const prompt = `
-    我是一名网课专注度监测AI助手。以下是学生在一段学习过程中的数据统计摘要：
-    - 学习时长：约 ${history.length * 5} 秒
-    - 平均专注度分数：${avgScore}/100
-    - 最常出现的姿态：${POSTURE_LABELS[mostFrequentPosture as PostureType]}
-    - 检测到的干扰项：${distractions || "无"}
-    - 姿态分布数据：${JSON.stringify(postureCounts)}
+你是网课专注度监测助手。以下是学习数据：
+- 学习时长：约 ${history.length * 5} 秒
+- 平均专注度：${avgScore}/100
+- 最常出现的姿态：${POSTURE_LABELS[mostFrequentPosture as PostureType]}
+- 检测到的干扰项：${distractions || "无"}
+- 姿态分布：${JSON.stringify(postureCounts)}
 
-    请根据以上数据，生成一份给学生的学习总结报告（中文）。
-    报告应包含：
-    1. 对整体表现的鼓励或点评。
-    2. 指出主要的姿态问题（如果有）。
-    3. 针对干扰项的改进建议。
-    语气要亲切、专业，像一位负责任的助教。字数控制在 200 字以内。
-  `;
+请生成一段 200 字以内的中文总结，包含：
+1) 整体表现鼓励或点评
+2) 主要姿态问题（如有）
+3) 针对干扰项的改进建议
+语气亲切、专业。`;
 
   try {
     const ai = getAiClient();
-    const response = await ai.models.generateContent({
-      model: VISION_MODEL,
-      contents: prompt,
+    const resp = await ai.chat.completions.create({
+      model: TEXT_MODEL,
+      temperature: 0.6,
+      messages: [
+        { role: "system", content: "你是专业的学习助教，请用中文简洁总结。" },
+        { role: "user", content: prompt },
+      ],
     });
-    return response.text || "无法生成总结。";
+    return extractText(resp.choices?.[0]?.message?.content) || "无法生成总结。";
   } catch (e) {
     console.error("Summary generation failed", e);
     return "生成总结报告时发生错误。";
   }
 }
 
-// --- Text-to-Speech (Audio) ---
-
-// Helper: Decode base64 to byte array
-function decode(base64: string) {
-  const binaryString = atob(base64);
-  const len = binaryString.length;
-  const bytes = new Uint8Array(len);
-  for (let i = 0; i < len; i++) {
-    bytes[i] = binaryString.charCodeAt(i);
-  }
-  return bytes;
-}
-
-// Helper: Decode raw PCM/Audio data into AudioBuffer
-async function decodeAudioData(
-  data: Uint8Array,
-  ctx: AudioContext,
-  sampleRate: number,
-  numChannels: number,
-): Promise<AudioBuffer> {
-  const dataInt16 = new Int16Array(data.buffer);
-  const frameCount = dataInt16.length / numChannels;
-  const buffer = ctx.createBuffer(numChannels, frameCount, sampleRate);
-
-  for (let channel = 0; channel < numChannels; channel++) {
-    const channelData = buffer.getChannelData(channel);
-    for (let i = 0; i < frameCount; i++) {
-      channelData[i] = dataInt16[i * numChannels + channel] / 32768.0;
-    }
-  }
-  return buffer;
-}
-
+// --- Text-to-Speech ---
+// Qwen TTS 接口与现有前端集成差异较大，这里优先使用浏览器 TTS 作为兜底。
 export async function generateSpeech(text: string): Promise<void> {
-  const ai = getAiClient();
-  const response = await ai.models.generateContent({
-    model: TTS_MODEL,
-    contents: { parts: [{ text }] },
-    config: {
-      responseModalities: [Modality.AUDIO],
-      speechConfig: {
-        voiceConfig: {
-          prebuiltVoiceConfig: { voiceName: 'Kore' }, 
-        },
-      },
-    },
-  });
-
-  const base64Audio = response.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
-  
-  if (!base64Audio) {
-    throw new Error("No audio data returned from Gemini TTS");
+  if (typeof window === "undefined") return;
+  if (window.speechSynthesis) {
+    return new Promise((resolve) => {
+      const u = new SpeechSynthesisUtterance(text);
+      u.lang = "zh-CN";
+      u.onend = resolve;
+      u.onerror = resolve;
+      window.speechSynthesis.speak(u);
+    });
   }
-
-  const AudioContext = window.AudioContext || (window as any).webkitAudioContext;
-  const ctx = new AudioContext({ sampleRate: 24000 }); 
-
-  const audioBuffer = await decodeAudioData(
-    decode(base64Audio),
-    ctx,
-    24000,
-    1
-  );
-
-  const source = ctx.createBufferSource();
-  source.buffer = audioBuffer;
-  source.connect(ctx.destination);
-  source.start();
 }
