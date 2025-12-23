@@ -1,20 +1,128 @@
-<div align="center">
-<img width="1200" height="475" alt="GHBanner" src="https://github.com/user-attachments/assets/0aa67016-6eaf-458a-adb2-6e31a0763ed6" />
-</div>
+# 智能网课专注度助手
 
-# Run and deploy your AI Studio app
+一个基于 AI 视觉分析的智能网课学习专注度监测助手，帮助学生在网课学习过程中保持专注，养成良好的学习习惯。
 
-This contains everything you need to run your app locally.
+## 功能特性
 
-View your app in AI Studio: https://ai.studio/apps/drive/1znfsOTJuSWXN-ByPVfzZJOLisyty_bXc
+### 🎯 核心功能
 
-## Run Locally
+- **实时专注度监测**：通过摄像头实时分析学生的学习状态，包括专注度评分、坐姿检测、电子设备使用检测等
+- **智能语音提醒**：当检测到学生走神、坐姿不佳或使用电子设备时，AI 会以温和的语音进行提醒
+- **番茄钟工作法**：内置番茄钟功能，默认 25 分钟专注学习 + 5 分钟休息，可自定义时长
+- **学习报告生成**：学习结束后自动生成详细的学习报告，包含平均专注度、学习时长、干扰次数、AI 点评等
+- **专注度趋势图**：实时展示专注度变化趋势，帮助了解学习状态波动
 
-**Prerequisites:**  Node.js
+### 🎨 个性化功能
 
+- **多主题切换**：提供多种页面主题（默认、护眼、深色、粉色、海洋、森林等），可根据喜好选择
+- **语音风格选择**：支持多种语音提醒风格（温柔学姐、严厉老师、活力教练、平静导师、励志演讲等）
+- **金币激励系统**：完成学习任务可获得金币奖励，用于解锁更多主题和语音风格
+- **历史记录**：本地保存学习历史记录，方便回顾学习表现
 
-1. Install dependencies:
-   `npm install`
-2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
-3. Run the app:
-   `npm run dev`
+### ⚙️ 个性化设置
+
+- **监测频率调整**：可设置每 3 秒、5 秒或 10 秒分析一次（平衡及时性与流量消耗）
+- **灵敏度设置**：可调整提醒灵敏度（严格模式、平衡模式、宽松模式）
+- **番茄钟自定义**：可自定义专注时长和休息时长
+
+## 技术栈
+
+- **前端框架**：React 19 + TypeScript
+- **构建工具**：Vite
+- **AI 服务**：阿里云 DashScope（通义千问）视觉模型
+- **图表库**：Recharts
+- **UI 组件**：Tailwind CSS + Heroicons
+
+## 运行方式
+
+### 环境要求
+
+- Node.js（建议 18+ 版本）
+- npm 或 yarn 包管理器
+
+### 安装步骤
+
+1. **克隆或下载项目**
+
+```bash
+cd 智能网课专注度助手
+```
+
+2. **安装依赖**
+
+```bash
+npm install
+```
+
+3. **配置 API Key**
+
+本项目使用阿里云 DashScope（通义千问）API 进行图像分析和文本生成。你需要：
+
+- 访问 [阿里云 DashScope 控制台](https://dashscope.console.aliyun.com/)
+- 注册/登录账号并开通 DashScope 服务
+- 创建 API Key
+- 在项目根目录创建 `.env` 文件（或 `.env.local`），添加以下配置：
+
+```env
+DASHSCOPE_API_KEY=你的API_KEY
+DASHSCOPE_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1
+QWEN_VL_MODEL=qwen3-vl-plus
+QWEN_TEXT_MODEL=qwen-plus
+```
+
+**注意**：
+- API Key 需要用户自行申请，本项目不提供 API Key
+- 请妥善保管你的 API Key，不要将其提交到代码仓库
+- 建议将 `.env` 文件添加到 `.gitignore` 中
+
+4. **启动开发服务器**
+
+```bash
+npm run dev
+```
+
+5. **访问应用**
+
+浏览器打开 `http://localhost:3000`，允许摄像头权限后即可开始使用。
+
+### 构建生产版本
+
+```bash
+npm run build
+```
+
+构建完成后，静态文件将生成在 `dist` 目录中。
+
+### 预览生产构建
+
+```bash
+npm run preview
+```
+
+## 使用说明
+
+1. **首次使用**：打开应用后，系统会显示使用指南，建议先阅读了解功能
+2. **开始学习**：点击「开始上课」按钮，允许浏览器访问摄像头权限
+3. **实时监测**：系统会定期分析你的学习状态，并在检测到问题时进行语音提醒
+4. **查看报告**：学习结束后，点击「下课并生成报告」查看本次学习的详细报告
+5. **个性化设置**：在「设置」页面可以调整监测频率、灵敏度、语音风格和番茄钟时长
+6. **商城功能**：在「商城」页面可以使用金币购买更多主题和语音风格
+
+## 隐私说明
+
+- 本工具仅在浏览器本地采集摄像头画面帧
+- 图像数据会发送到阿里云 DashScope API 进行分析，不会长时间存储视频数据
+- 学习历史记录仅保存在浏览器本地（localStorage），不会上传到服务器
+- 请在个人设备和可信网络环境下使用
+- 在公共场景使用时，请注意周围他人的隐私保护
+
+## 注意事项
+
+- 确保摄像头权限已授予，否则无法进行监测
+- 建议在光线充足的环境下使用，以获得更准确的分析结果
+- API 调用会产生费用，请根据实际使用情况合理设置监测频率
+- 如遇到 API 配额不足或网络问题，系统会自动暂停并提示
+
+## 许可证
+
+本项目为私有项目，仅供学习和个人使用。
