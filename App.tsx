@@ -103,6 +103,8 @@ export default function App() {
   
   const consecutiveBadCountRef = useRef(0);
   const lastVoiceAlertTimeRef = useRef(0);
+  // 使用 ref 跟踪监测状态，确保在异步操作中能获取最新值
+  const isMonitoringRef = useRef(isMonitoring);
 
   const speakText = async (text: string, force: boolean = false, styleOverride?: VoiceThemeId) => {
     // 正常提醒时要受监测状态和连续异常次数限制；试听时可强制播放
@@ -148,10 +150,14 @@ export default function App() {
   };
 
   const captureAndAnalyze = useCallback(async () => {
-    if (!isMonitoring) return;
+    // 使用 ref 检查监测状态，确保获取最新值
+    if (!isMonitoringRef.current) return;
 
     if (!videoRef.current || !canvasRef.current) {
-        timeoutRef.current = window.setTimeout(captureAndAnalyze, 1000);
+        // 在设置 timeout 前再次检查监测状态
+        if (isMonitoringRef.current) {
+          timeoutRef.current = window.setTimeout(captureAndAnalyze, 1000);
+        }
         return;
     }
 
@@ -176,6 +182,10 @@ export default function App() {
 
     try {
       const result = await analyzeStudentState(base64Image);
+      
+      // 在更新状态前再次检查监测状态，防止在异步操作期间状态已改变
+      if (!isMonitoringRef.current) return;
+      
       const timestampedResult = { ...result, timestamp: Date.now() };
       
       setLatestResult(timestampedResult);
@@ -184,10 +194,16 @@ export default function App() {
 
       handleVoiceAlert(timestampedResult);
 
-      timeoutRef.current = window.setTimeout(captureAndAnalyze, monitorIntervalMs);
+      // 在设置 timeout 前再次检查监测状态
+      if (isMonitoringRef.current) {
+        timeoutRef.current = window.setTimeout(captureAndAnalyze, monitorIntervalMs);
+      }
 
     } catch (err: any) {
       console.error("Analysis failed:", err);
+      
+      // 在错误处理前检查监测状态
+      if (!isMonitoringRef.current) return;
       
       let errorMessage = "AI 分析服务暂时不可用";
       let nextRetryTime = monitorIntervalMs;
@@ -229,9 +245,17 @@ export default function App() {
       }
 
       setError(errorMessage);
-      timeoutRef.current = window.setTimeout(captureAndAnalyze, nextRetryTime);
+      // 在设置 timeout 前再次检查监测状态
+      if (isMonitoringRef.current) {
+        timeoutRef.current = window.setTimeout(captureAndAnalyze, nextRetryTime);
+      }
     }
   }, [isMonitoring, monitorIntervalMs, voiceAlertThreshold]);
+
+  // 同步 ref 和 state
+  useEffect(() => {
+    isMonitoringRef.current = isMonitoring;
+  }, [isMonitoring]);
 
   useEffect(() => {
     if (isMonitoring) {
@@ -254,11 +278,22 @@ export default function App() {
   }, [isMonitoring, captureAndAnalyze]);
 
   const handleToggleMonitoring = () => {
-    setIsMonitoring(!isMonitoring);
+    const newMonitoringState = !isMonitoring;
+    setIsMonitoring(newMonitoringState);
+    // 如果停止监测，立即清除 timeout
+    if (!newMonitoringState && timeoutRef.current) {
+      clearTimeout(timeoutRef.current);
+      timeoutRef.current = null;
+    }
   };
 
   const handleStopAndReport = async () => {
+    // 立即停止监测并清除所有 timeout
     setIsMonitoring(false);
+    if (timeoutRef.current) {
+      clearTimeout(timeoutRef.current);
+      timeoutRef.current = null;
+    }
     if (history.length === 0) return;
 
     setIsGeneratingReport(true);
